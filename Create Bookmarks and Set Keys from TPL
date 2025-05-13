@@ -1,0 +1,77 @@
+import maya.cmds as cmds
+import re
+import random
+
+def get_next_free_layer_name(base='animLayer_tpl_', digits=2):
+    index = 0
+    while True:
+        name = base + str(index).zfill(digits)
+        if not cmds.objExists(name):
+            return name
+        index += 1
+
+plugin_name = 'timeSliderBookmark.mll'
+
+try:
+    if not cmds.pluginInfo(plugin_name, query=True, loaded=True):
+        cmds.loadPlugin(plugin_name)
+        print('Plugin {} has been loaded.'.format(plugin_name))
+    else:
+        print('Plugin {} is already loaded.'.format(plugin_name))
+except RuntimeError as e:
+    print('Error while working with plugin {}: {}'.format(plugin_name, str(e)))
+    raise
+
+from maya.plugin.timeSliderBookmark.timeSliderBookmark import createBookmark
+
+raw = cmds.getAttr("tpl_desc")
+pattern = r'animSeq\s*=\s*\[\s*({[\s\S]*?})\s*\]'
+seq_block = re.findall(pattern, raw)
+
+if seq_block:
+    anims = re.findall(
+        r'name\s*=\s*"([^"]+)"[\s\S]*?begin\s*=\s*(\d+)[\s\S]*?end\s*=\s*(\d+)',
+        seq_block[0]
+    )
+
+    if not anims:
+        print("No valid animation ranges found.")
+    else:
+        selected_objs = cmds.ls(selection=True)
+        if selected_objs:
+            layer_name = get_next_free_layer_name()
+            cmds.animLayer(layer_name)
+            cmds.animLayer(layer_name, edit=True, preferred=True)
+            cmds.animLayer(layer_name, edit=True, addSelectedObjects=True)
+
+            print("Using animLayer:", layer_name)
+
+            cmds.refresh(suspend=True)
+
+            for name, begin, end in anims:
+                begin = int(begin)
+                end = int(end)
+                print("Processing: {} ({}-{})".format(name, begin, end))
+
+                color = (random.random(), random.random(), random.random())
+                createBookmark(name=name, start=begin, stop=end, color=color)
+
+                for obj in selected_objs:
+                    for t in [begin, end]:
+                        cmds.currentTime(t, edit=True)
+                        cmds.setKeyframe(obj)
+
+            cmds.refresh(suspend=False)
+
+        else:
+            cmds.refresh(suspend=True)
+            for name, begin, end in anims:
+                begin = int(begin)
+                end = int(end)
+                color = (random.random(), random.random(), random.random())
+                print("Creating bookmark: {} ({}-{})".format(name, begin, end))
+                createBookmark(name=name, start=begin, stop=end, color=color)
+            cmds.refresh(suspend=False)
+
+else:
+    print("No animation block found.")
